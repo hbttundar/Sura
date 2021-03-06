@@ -1,0 +1,188 @@
+version: "3.4"
+services:
+  ### go ##############################################################################################################
+  go:
+    build:
+      context: .
+      dockerfile: Dockerfile
+      args:
+        ENVIRONMENT: ${ENVIRONMENT}      
+        GOLANG_FILE_NAME: ${GOLANG_FILE_NAME}
+        INSTALL_REDIS: ${INSTALL_REDIS}
+        PUID: ${PUID}
+        PGID: ${PGID}
+    env_file:
+      - .env
+    depends_on: 
+      - mysql
+    links:
+      - redis
+    networks:
+      - backend  
+    ports:
+      - "8080:8080" 
+    restart: unless-stopped    
+    container_name: ${GO_CONTAINER_NAME}    
+  ### web ##############################################################################################################
+  web:
+    build:
+      context: ./docker/web/      
+    env_file:
+      - .env
+    depends_on:
+      - go  
+    networks:
+      - backend
+    ports:
+      - "80:80"
+      - "443:443"
+    volumes:  
+      - ${NGINX_LOCAL_CONFIG}:/etc/nginx/
+      - ${NGINX_SSL_CERT}:/etc/nginx/ssl/
+    container_name: ${NGINX_CONTAINER_NAME}
+  ### mysql ############################################################################################################
+  mysql:
+    build:
+      context: ./docker/mysql/
+    restart: always
+    ports:
+      - "3306:3306"
+    volumes:
+      - mysql:/var/lib/mysql
+      - ./docker/mysql/mysql_scripts:/custom_scripts
+    networks:
+      - backend
+    environment:
+      MYSQL_ROOT_PASSWORD: "${DB_PASSWORD}"
+      MYSQL_DATABASE: "${DB_DATABASE}"
+      MYSQL_USER: "${DB_USERNAME}"
+      MYSQL_PASSWORD: "${DB_PASSWORD}"
+      MYSQL_ALLOW_EMPTY_PASSWORD: 'yes'
+    container_name: ${MYSQL_CONTAINER_NAME}
+  ### redis ############################################################################################################
+  redis:
+    build:
+      context: ./docker/redis/
+    command: [ "redis-server", "--requirepass", "${REDIS_PASSWORD}" ]
+    restart: always
+    ports:
+      - "6379:6379"
+    networks:
+      - backend
+    container_name: ${REDIS_CONTAINER_NAME}
+    working_dir: /var/www/app/  
+  ### mailhog ##########################################################################################################
+  mailhog:
+    build:
+      context: ./docker/mailhog/
+    image: mailhog/mailhog
+    restart: always
+    ports:
+      - 1025:1025
+      - 8025:8025
+    container_name: ${MAILHOG_CONTAINER_NAME}
+    networks:
+      - backend
+  ### hostmachine ######################################################################################################
+  hostmachine:
+    build:
+      context: ./docker/hostmachine/
+    image: qoomon/docker-host
+    cap_add: [ 'NET_ADMIN', 'NET_RAW' ]
+    restart: on-failure
+    networks:
+      - backend
+    container_name: ${HOSTMACHINE_CONTAINER_NAME}
+  ### mongo ############################################################################################################
+  mongo:
+    image: mongo:4.2
+    restart: always
+    #DB in share for persistence
+    volumes:
+      - sura_mongo:/data/db
+    container_name: ${MONGODB_CONTAINER_NAME}
+    networks:
+      - backend
+  ## ElasticSearch #####################################################################################################
+  elasticsearch:
+    image: docker.elastic.co/elasticsearch/elasticsearch:7.10.0
+    volumes:
+      - sura_elasticsearch:/usr/share/elasticsearch/data
+    environment:
+      - http.host=0.0.0.0
+      - transport.host=localhost
+      - network.host=0.0.0.0
+      - "ES_JAVA_OPTS=-Xms512m -Xmx512m"
+    #ulimits:
+      #memlock:
+        #soft: -1
+        #hard: -1
+    #deploy:
+      #resources:
+        #limits:
+          #memory: 1g
+    container_name: ${ELASTICSEARCH_CONTAINER_NAME}
+    networks:
+      - backend
+  ### graylog ##########################################################################################################
+  graylog:
+    image: graylog/graylog:4.0.1-1
+    volumes:
+      - sura_journal:/usr/share/graylog/data/journal
+      - ${GRAYLOG_CONFIG}:/usr/share/graylog/data/config
+      #volumes:
+      #- ./docker/graylog/config:/usr/share/graylog/data/config
+      #- ./docker/data/journal:/usr/share/graylog/data/journal
+    environment:
+      # CHANGE ME (must be at least 16 characters)!
+      - GRAYLOG_PASSWORD_SECRET=suraGraylogadmin
+      # Password: admin
+      - GRAYLOG_ROOT_PASSWORD_SHA2=8c6976e5b5410415bde908bd4dee15dfb167a9c873fc4bb8a81f6f2ab448a918
+      - GRAYLOG_HTTP_EXTERNAL_URI=http://127.0.0.1:7000/
+      - GRAYLOG_NODE_ID="dec7fa69-ae3b-488f-970d-ef707e727345"
+    restart: always
+    depends_on:
+      - mongo
+      - elasticsearch
+    ports:
+      # Graylog web interface and REST API
+      - 7000:9000
+      # GELF http
+      - 12201:12201
+      # Syslog TCP
+      - 1514:1514
+      # Syslog UDP
+      - 1514:1514/udp
+      # GELF TCP
+      - 5555:5555
+      # GELF UDP
+      - 12201:12201/udp
+    networks:
+      - backend
+    container_name: ${GRAYLOG_CONTAINER_NAME}
+  ### node #############################################################################################################
+  node:
+    build:
+      context: ./docker/node/
+      args:
+        PUID: ${PUID}
+        PGID: ${PGID}
+    container_name: ${NODE_CONTAINER_NAME}
+    environment:
+      ENVIRONMENT: "${ENVIRONMENT}"
+    networks:
+      - backend
+    volumes:
+      - ${GO_APP_ROOT}:/app/
+    depends_on:
+      - web
+    working_dir: /app
+#########################################################################################################################
+networks:
+  backend:
+    driver: bridge
+volumes:
+  mysql:
+  sura_mongo:
+  sura_elasticsearch:
+  sura_journal:

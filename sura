@@ -1,0 +1,84 @@
+#!/usr/bin/env bash
+# export akarna to bash $PATH envronment variable
+CURRENT_DIR=$(pwd)
+echo "export PATH=$CURRENT_DIR:$PATH" >> ~/.bashrc
+UNAMEOUT="$(uname -s)"
+# Regular Colors
+BLACK='\033[0;30m'  # Black
+RED='\033[0;31m'    # Red
+GREEN='\033[0;32m'  # Green
+YELLOW='\033[0;33m' # Yellow
+BLUE='\033[0;34m'   # Blue
+PURPLE='\033[0;35m' # Purple
+CYAN='\033[0;36m'   # Cyan
+WHITE='\033[0;37m'  # White
+NC='\033[0m'
+# Verify operating system is supported...
+case "${UNAMEOUT}" in
+Linux*) MACHINE=linux ;;
+Darwin*) MACHINE=mac ;;
+*) MACHINE="UNKNOWN" ;;
+esac
+
+if [ "$MACHINE" == "UNKNOWN" ]; then
+  echo -e ${YELLOW}"Unsupported operating system [$(uname -s)]. akarna supports macOS, Linux, and Windows (WSL2)."
+fi
+# Define environment variables...
+export PUID=$(id -u)
+export PGID=$(id -g)
+
+if [ "$MACHINE" == "linux" ]; then
+  export SEDCMD="sed -i"
+elif [ "$MACHINE" == "mac" ]; then
+  export SEDCMD="sed -i .bak"
+fi
+# Ensure that Docker is running...
+if ! docker info >/dev/null 2>&1; then
+  echo -e "${WHITE}Docker is not running.${NC}"
+  exit 1
+fi
+COMPOSE="docker-compose"
+if [ $# -gt 0 ]; then
+  if [ "$1" == "help" ] || [ "$1" == "-h" ]; then
+    shift 1
+    echo -e ${GREEN} "You have these commands for running:\r\n"
+    echo -e ${RED} "up:"
+    echo -e ${CYAN} "sura up use for running docker-compose up command\r\n"
+    echo -e ${PURPLE} "sample : sura up \r\n"
+    echo -e ${RED} "go:"
+    echo -e ${CYAN} "sura go use for proxy go commands to your go container service \r\n"
+    echo -e ${PURPLE} "sample : sura go version \r\n"
+    echo -e ${GREEN} "build:"
+    echo -e ${CYAN} "sura go use for proxy go build commands to your go container service  and build the file that you mentioned for main folder of app\r\n"
+    echo -e ${PURPLE} "sample : sura go buld *.go \r\n"
+    echo -e ${RED} "shell:"
+    echo -e ${CYAN} "sura shell use for proxy bash command to your go container service  \r\n"
+
+  elif
+    [ "$1" == "up" ]
+  then
+    shift 1
+    $COMPOSE up -d
+  elif [ "$1" == "reload" ] || [ "$1" == "restart" ] || [ "$1" == "rs" ] || [ "$1" == "rl" ]; then
+    $COMPOSE down && $COMPOSE up -d
+  # Proxy the "go" command to the "web container"
+  elif [ "$1" == "go" ] ; then
+    shift 1
+    EXEC_CMD="export PATH=$PATH:/usr/local/go/bin && cd /app && go $@"
+    $COMPOSE exec -u sura go bash -c "$EXEC_CMD"
+    elif [ "$1" == "build" ] ; then
+    shift 1
+    EXEC_CMD="export PATH=$PATH:/usr/local/go/bin && cd /app/src/main && cd /app/src/main && go build -o /app/bin/ $@"    
+    $COMPOSE exec -u sura go bash -c "$EXEC_CMD" 
+    echo -e ${CYAN}"build was finised. \r\n"
+  elif [ "$1" == "shell" ]; then
+    shift 1
+    EXEC_CMD="bash"
+    $COMPOSE exec -u sura go "$EXEC_CMD"
+  # Pass unknown commands to the "docker-compose" binary...
+  else
+    $COMPOSE $@
+  fi
+else
+  $COMPOSE ps
+fi

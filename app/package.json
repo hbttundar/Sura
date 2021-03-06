@@ -1,0 +1,6 @@
+{
+  "dependencies": {
+    "cross-env": "^7.0.3",
+    "tailwindcss": "^2.0.3"
+  }
+}
