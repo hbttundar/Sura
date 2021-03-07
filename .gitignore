@@ -1,4 +1,4 @@
 .vscode
 .idea
-.app/src/main/vendor/*
-/.env
+/app/vendor/*
+/app/node_modules/*
